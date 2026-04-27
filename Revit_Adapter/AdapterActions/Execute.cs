@@ -31,7 +31,7 @@ namespace BH.Adapter.Revit
     public partial class RevitAdapter : BHoMAdapter
     {
         /***************************************************/
-        /****    BHoM side of Revit_Adapter Execute     ****/
+        /****    BHoM side of Revit_Adapter Execute     s****/
         /***************************************************/
 
         /***************************************************/
