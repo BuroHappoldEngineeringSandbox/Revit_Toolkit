@@ -1,0 +1,7 @@
+# This file is managed by github-governance. Do not edit manually.
+# Source: orgs/BuroHappoldEngineeringSandbox/codeowners.yml
+
+* @BuroHappoldEngineeringSandbox/bim-developers
+.github/ @BuroHappoldEngineeringSandbox/bim
+src/ @BuroHappoldEngineeringSandbox/bim-developers
+src/core/ @BuroHappoldEngineeringSandbox/bim-developers
