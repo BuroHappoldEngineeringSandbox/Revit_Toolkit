@@ -1,0 +1,25 @@
+# Sandbox validation harness for CI_Toolkit#159: does seeding File_Toolkit let the
+# Revit API mock solution build in Revit_Toolkit's minimal closure?
+# Leg A points at @develop (unmodified). Leg B at the seed branch.
+# Rerun of the 2026-08-10 attempt, this time based on develop so dependency
+# resolution matches production (the earlier run based on main and resolved
+# BHoM_UI@main, which fails MSB3823 for unrelated reasons).
+name: Versioning
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci-versioning:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - name: Run ci-versioning
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@develop
+        with:
+          app_id: ${{ secrets.BHOM_APP_ID }}
+          private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
