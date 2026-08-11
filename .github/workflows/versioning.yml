@@ -1,0 +1,36 @@
+# Leg C: refactor equivalence on the REAL routes, against leg B (run 31476327403).
+#
+# Leg A covered the unverified routes and the Warning/exit-0 side. This covers what
+# that could not reach: real/SignatureResolved, CountedAsReal true, and Error/exit 1.
+#
+# Reference, leg B: 2 records, Error / 2 failures, real/SignatureResolved=2,
+#   BH.Revit.Engine.Core.Compute.TryGetValueFromSource -> Revit_ModelQA_Engine_2022
+#   BH.Revit.Engine.Core.Create.ProjectParameter       -> Revit_Core_Engine_2024
+#
+# Same subject base as leg B (50210650) and the same trivial .cs edit. All 9
+# dependencies verified unmoved since leg B, including File_Toolkit @ 4af2d0c.
+#
+# The seed is left at its default rather than overridden, which is the difference
+# from leg A's harness. Leg B got it from sandbox CI_Toolkit@validate/mock-seed-file-
+# toolkit; it is now merged into Admin develop as CI_Toolkit#162, and the ported code
+# was verified byte-identical to the branch leg B ran, so the seed is not a variable.
+# The single intended variable is the refactored runner from CI_Toolkit#163.
+name: Versioning
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci-versioning:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - name: Run ci-versioning
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@develop
+        with:
+          app_id: ${{ secrets.BHOM_APP_ID }}
+          private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
