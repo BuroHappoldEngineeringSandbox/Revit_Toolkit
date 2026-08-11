@@ -1,0 +1,35 @@
+# Refactor-equivalence harness for CI_Toolkit#163 (VersioningRunner cleanup).
+#
+# Reproduces leg A of the CI_Toolkit#159 A/B (run 31475385816) as closely as it can
+# still be reproduced, so the only intended difference is the refactored runner:
+#   - same subject base, sandbox Revit_Toolkit develop @ 50210650
+#   - same trivial .cs edit to trip the changed-file gate
+#   - all 8 dependencies verified unmoved since leg A, so no dependency drift
+#
+# Two deliberate differences from leg A's harness, both required:
+#   - the action ref points at the refactor branch, and inside it prepare-runner is
+#     temporarily flipped to the same branch, or it would build develop's runner
+#   - revit_mock_support_repos is set empty. Leg A ran before CI_Toolkit#162 merged,
+#     so File_Toolkit was not seeded and the mock build failed, which is what produced
+#     the 805 unverified. The refactor branch is based after #162, whose default would
+#     seed it, build the mocks, and collapse the 805. Empty restores leg A's shape.
+name: Versioning
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci-versioning:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    steps:
+      - name: Run ci-versioning
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@refactor/versioning-runner-readability
+        with:
+          app_id: ${{ secrets.BHOM_APP_ID }}
+          private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
+          revit_mock_support_repos: ''
