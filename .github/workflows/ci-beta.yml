@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Run build
-        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-build@develop
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-build@fix/plain-output-and-build-summary
         with:
           app_id: ${{ secrets.BHOM_APP_ID }}
           private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
@@ -121,7 +121,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Run serialisation
-        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-serialisation@develop
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-serialisation@fix/plain-output-and-build-summary
         with:
           app_id: ${{ secrets.BHOM_APP_ID }}
           private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
@@ -132,7 +132,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Run versioning
-        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@develop
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@fix/plain-output-and-build-summary
         with:
           app_id: ${{ secrets.BHOM_APP_ID }}
           private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
