@@ -51,3 +51,5 @@ namespace BH.Revit.Engine.Core
 
 
 
+
+// CI diagnostic: confirm PDB emission in the Build directory. Revert.
