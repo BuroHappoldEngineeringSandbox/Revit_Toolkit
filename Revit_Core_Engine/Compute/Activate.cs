@@ -51,3 +51,5 @@ namespace BH.Revit.Engine.Core
 
 
 
+
+// CI validation: reporting summary changes (#189). Revert.
