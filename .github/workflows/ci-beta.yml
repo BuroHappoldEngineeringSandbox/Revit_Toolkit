@@ -132,7 +132,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Run versioning
-        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@develop
+        uses: BuroHappoldEngineeringAdmin/CI_Toolkit/.github/actions/ci-versioning@feat/record-finding-context-and-coverage
         with:
           app_id: ${{ secrets.BHOM_APP_ID }}
           private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
