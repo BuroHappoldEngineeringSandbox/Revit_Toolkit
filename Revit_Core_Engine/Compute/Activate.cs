@@ -52,5 +52,5 @@ namespace BH.Revit.Engine.Core
 
 
 
-// CI validation: deliberate compile error to exercise the failing paths.
-public class ValDeliberateBreak { private NoSuchType _x; }
+
+
