@@ -1,0 +1,91 @@
+name: altConfig cost probe
+
+# Measures what building the Revit alt configurations costs on a real
+# windows-2025-vs2026 runner, against the Release-only baseline that
+# ci-versioning builds today. Sandbox only. Dispatch by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      configs:
+        description: Configurations to time, comma separated.
+        required: false
+        default: "Release,Release2022,Release2023,Release2024,Release2025,Release2026"
+
+jobs:
+  cost:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve dependencies
+        uses: BHoM/CI_Toolkit/.github/actions/resolve-dependencies@develop
+        with:
+          mode: caller
+          dotnet_version: "8.0"
+          configuration: Release
+          token: ${{ github.token }}
+
+      - name: Restore once
+        shell: pwsh
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          dotnet restore Revit_Toolkit.sln
+          $sw.Stop()
+          "restore_seconds=$([int]$sw.Elapsed.TotalSeconds)" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "restore took $([int]$sw.Elapsed.TotalSeconds)s"
+
+      - name: Time each configuration
+        id: timings
+        shell: pwsh
+        run: |
+          # Each config has a distinct DefineConstants and AssemblyName, so none of the
+          # compilation is shared. --no-restore isolates compile cost from restore cost.
+          $rows = @()
+          foreach ($c in "${{ inputs.configs }}".Split(',')) {
+            $c = $c.Trim()
+            if (-not $c) { continue }
+            $before = (Get-ChildItem 'Build' -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            dotnet build Revit_Toolkit.sln --no-restore -c $c --nologo -m -clp:ErrorsOnly
+            $code = $LASTEXITCODE
+            $sw.Stop()
+            $after = (Get-ChildItem 'Build' -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
+            $rows += [pscustomobject]@{
+              Config  = $c
+              Seconds = [int]$sw.Elapsed.TotalSeconds
+              Exit    = $code
+              BuildMB = [math]::Round($after / 1MB, 1)
+              DeltaMB = [math]::Round(($after - $before) / 1MB, 1)
+            }
+            Write-Host "== $c : $([int]$sw.Elapsed.TotalSeconds)s exit=$code cumulative Build\ = $([math]::Round($after/1MB,1)) MB"
+          }
+          $rows | ConvertTo-Json -Compress | Out-File 'timings.json' -Encoding utf8
+          $rows | Format-Table -AutoSize | Out-String | Write-Host
+
+          $md = @("### altConfig cost probe", "", "| Config | Seconds | Exit | Build\ cumulative MB | Delta MB |", "|---|---|---|---|---|")
+          foreach ($r in $rows) { $md += "| $($r.Config) | $($r.Seconds) | $($r.Exit) | $($r.BuildMB) | $($r.DeltaMB) |" }
+          $total = ($rows | Measure-Object Seconds -Sum).Sum
+          $baseline = ($rows | Where-Object { $_.Config -eq 'Release' } | Select-Object -First 1).Seconds
+          $md += ""
+          $md += "Restore (once): $env:restore_seconds s"
+          $md += ""
+          $md += "Total build seconds: $total. Release-only baseline: $baseline. Ratio: $(if ($baseline) { [math]::Round($total / $baseline, 2) } else { 'n/a' })x"
+          $md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Report runner and disk
+        shell: pwsh
+        run: |
+          $d = Get-PSDrive -Name (Get-Location).Drive.Name
+          Write-Host "free_GB=$([math]::Round($d.Free/1GB,1)) used_GB=$([math]::Round($d.Used/1GB,1))"
+          Write-Host "cores=$env:NUMBER_OF_PROCESSORS"
+          $pd = 'C:\ProgramData\BHoM\Assemblies'
+          if (Test-Path $pd) {
+            $f = Get-ChildItem $pd -File
+            Write-Host "ProgramData assemblies: $($f.Count) files, $([math]::Round(($f|Measure-Object Length -Sum).Sum/1MB,1)) MB"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: altconfig-timings
+          path: timings.json
