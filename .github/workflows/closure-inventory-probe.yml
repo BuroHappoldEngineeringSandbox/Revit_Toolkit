@@ -1,0 +1,95 @@
+name: closure inventory probe
+
+# Throwaway. Reproduces the closure ci-versioning sees, then dumps what is actually
+# present, so the "what is in the closure at versioning time" question is measured
+# rather than read off resolve-dependencies source. Delete the branch when done.
+
+on:
+  push:
+    branches: [probe/closure-inventory]
+
+jobs:
+  inventory:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve dependencies
+        uses: BHoM/CI_Toolkit/.github/actions/resolve-dependencies@develop
+        with:
+          mode: caller
+          dotnet_version: "8.0"
+          configuration: Release
+          token: ${{ github.token }}
+          additional_seeds: |
+            BHoM/Test_Toolkit
+            BHoM/Versioning_Toolkit
+            BHoM/File_Toolkit
+
+      - name: Snapshot ProgramData after dependencies, before subject build
+        shell: pwsh
+        run: |
+          $pd = 'C:\ProgramData\BHoM\Assemblies'
+          $f = @(Get-ChildItem $pd -File -Filter *.dll -ErrorAction SilentlyContinue)
+          Write-Host "AFTER_DEPS_COUNT=$($f.Count)"
+          ($f.BaseName | Sort-Object) -join "`n" | Out-File 'after-deps.txt' -Encoding utf8
+          $yr = @($f.BaseName | Where-Object { $_ -match '_20\d{2}$' } | Sort-Object)
+          Write-Host "AFTER_DEPS_YEARSUFFIXED=$($yr.Count)"
+          $yr -join ', ' | Write-Host
+
+      - name: Build subject (Release only, as ci-versioning does today)
+        shell: pwsh
+        run: |
+          $sln = (Get-ChildItem -Filter *.sln | Select-Object -First 1).FullName
+          Write-Host "SOLUTION=$sln"
+          dotnet restore $sln
+          dotnet build $sln --no-restore -c Release --nologo -m -clp:ErrorsOnly
+
+      - name: Snapshot after subject build
+        shell: pwsh
+        run: |
+          $pd = 'C:\ProgramData\BHoM\Assemblies'
+          $f = @(Get-ChildItem $pd -File -Filter *.dll -ErrorAction SilentlyContinue)
+          Write-Host "AFTER_SUBJECT_COUNT=$($f.Count)"
+          ($f.BaseName | Sort-Object) -join "`n" | Out-File 'after-subject.txt' -Encoding utf8
+
+          $b = @(Get-ChildItem 'Build' -Recurse -File -Filter *.dll -ErrorAction SilentlyContinue)
+          Write-Host "BUILD_DIR_COUNT=$($b.Count)"
+          ($b.BaseName | Sort-Object -Unique) -join ', ' | Write-Host
+          ($b.BaseName | Sort-Object -Unique) -join "`n" | Out-File 'build-dir.txt' -Encoding utf8
+
+          # The question this probe exists to answer: are the caller's own alternate
+          # configurations present, and are its dependencies' present?
+          $yr = @($f.BaseName | Where-Object { $_ -match '_20\d{2}$' } | Sort-Object)
+          Write-Host "YEARSUFFIXED_IN_PROGRAMDATA=$($yr.Count)"
+          $yr -join ', ' | Write-Host
+
+          $altOwn = if (Test-Path 'altConfigs.txt') {
+            (Get-Content 'altConfigs.txt' | Where-Object { $_.Trim() } | Measure-Object).Count
+          } else { 0 }
+          Write-Host "ALTCONFIG_LINES=$altOwn"
+
+          $md = @(
+            "### Closure inventory: ${{ github.repository }}",
+            "",
+            "| | |",
+            "|---|---|",
+            "| ProgramData DLLs after deps | $((Get-Content 'after-deps.txt').Count) |",
+            "| ProgramData DLLs after subject build | $($f.Count) |",
+            "| Year-suffixed in ProgramData | $($yr.Count) |",
+            "| Build\ DLLs (subject output) | $($b.Count) |",
+            "| altConfigs.txt lines | $altOwn |",
+            "",
+            "Year-suffixed present: ``$($yr -join ', ')``"
+          )
+          $md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: closure-inventory
+          path: |
+            after-deps.txt
+            after-subject.txt
+            build-dir.txt
