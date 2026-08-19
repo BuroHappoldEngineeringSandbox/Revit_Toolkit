@@ -4,13 +4,11 @@ name: altConfig cost probe
 # windows-2025-vs2026 runner, against the Release-only baseline that
 # ci-versioning builds today. Sandbox only. Dispatch by hand.
 
+# Push-triggered so it can run from this branch alone: workflow_dispatch would
+# require the file to exist on the default branch, which this probe must not touch.
 on:
-  workflow_dispatch:
-    inputs:
-      configs:
-        description: Configurations to time, comma separated.
-        required: false
-        default: "Release,Release2022,Release2023,Release2024,Release2025,Release2026"
+  push:
+    branches: [probe/altconfig-cost]
 
 jobs:
   cost:
@@ -42,7 +40,7 @@ jobs:
           # Each config has a distinct DefineConstants and AssemblyName, so none of the
           # compilation is shared. --no-restore isolates compile cost from restore cost.
           $rows = @()
-          foreach ($c in "${{ inputs.configs }}".Split(',')) {
+          foreach ($c in @("Release","Release2022","Release2023","Release2024","Release2025","Release2026")) {
             $c = $c.Trim()
             if (-not $c) { continue }
             $before = (Get-ChildItem 'Build' -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
