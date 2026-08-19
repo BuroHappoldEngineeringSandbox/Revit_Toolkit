@@ -71,6 +71,8 @@ jobs:
                           --configuration Release `
                           --output 'whole-closure.json' *> 'whole-closure-stdout.txt'
           Write-Host "WHOLE_CLOSURE_EXIT=$LASTEXITCODE"
+          # The runner exits 1 on Error by design. That is the measurement, not a probe failure.
+          $global:LASTEXITCODE = 0
           if (Test-Path 'whole-closure.json') {
             $r = Get-Content 'whole-closure.json' -Raw | ConvertFrom-Json
             Write-Host "WHOLE_CLOSURE_STATUS=$($r.Status)"
@@ -78,6 +80,7 @@ jobs:
           }
 
       - name: Report
+        if: always()
         shell: pwsh
         run: |
           if (Test-Path 'versioning-result.json') {
@@ -92,6 +95,7 @@ jobs:
           Write-Host "NOTE: check the 'Restore assembly cache' step for cache-hit status."
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: determinism-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
