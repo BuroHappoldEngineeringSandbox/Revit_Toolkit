@@ -1,0 +1,104 @@
+name: determinism gate probe
+
+# Throwaway. Runs the real ci-versioning action, then captures everything the
+# cross-runner equivalence criteria need: the full result JSON, the assembly load
+# order as Directory.GetFiles actually returns it, the loaded assembly set, and a
+# whole-closure re-run for the baseline failure rate.
+#
+# Run twice with the depsasm- cache deleted in between, so both legs cold-build the
+# closure rather than restoring it.
+
+on:
+  push:
+    branches: [probe/determinism]
+
+jobs:
+  leg:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # continue-on-error so the measurement steps still run when versioning reports
+      # a regression, which on Revit_Toolkit it currently does.
+      - name: Run real ci-versioning
+        id: ver
+        continue-on-error: true
+        uses: BHoM/CI_Toolkit/.github/actions/ci-versioning@develop
+        with:
+          app_id: ${{ secrets.BHOM_APP_ID }}
+          private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
+          fallback_token: ${{ github.token }}
+
+      - name: Capture load order, closure and coverage
+        shell: pwsh
+        run: |
+          $pd = 'C:\ProgramData\BHoM\Assemblies'
+
+          # The identical call LoadAssemblies makes. Order is whatever the filesystem
+          # returns; nothing sorts it, which is the thing under test.
+          $raw = [System.IO.Directory]::GetFiles($pd)
+          $raw | ForEach-Object { [System.IO.Path]::GetFileName($_) } |
+            Out-File 'load-order.txt' -Encoding utf8
+          Write-Host "ENUMERATED=$($raw.Count)"
+
+          # Same filter the runner applies, so this is the load order that matters.
+          $loadable = $raw | Where-Object {
+            $n = [System.IO.Path]::GetFileName($_)
+            $n -match '(oM|_Engine|_Adapter|_Test)\.dll$' -or $n -match 'Revit_\w+20\d{2}\.dll$'
+          } | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) }
+          $loadable | Out-File 'load-order-filtered.txt' -Encoding utf8
+          Write-Host "LOADABLE=$($loadable.Count)"
+
+          # Recorded, not gated: whether dependency builds are bit-reproducible.
+          Get-ChildItem $pd -File -Filter *.dll |
+            ForEach-Object { "{0}`t{1}`t{2}" -f $_.BaseName, $_.Length, (Get-FileHash $_.FullName -Algorithm SHA256).Hash } |
+            Sort-Object | Out-File 'assembly-hashes.txt' -Encoding utf8
+
+      - name: Whole-closure re-run for the baseline failure rate
+        shell: pwsh
+        run: |
+          # The action leaves its result and its runner behind. Re-run the same binary
+          # without --subject-assemblies to get the number the serialiser's 50%
+          # "baseline unusable" guard would be applied to on this repo.
+          $exe = Get-ChildItem -Recurse -Filter 'VersioningRunner.exe' -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+          if (-not $exe) { Write-Host "::warning::runner exe not found, skipping whole-closure leg"; exit 0 }
+          Write-Host "RUNNER=$($exe.FullName)"
+
+          & $exe.FullName --assemblies 'C:\ProgramData\BHoM\Assemblies' `
+                          --configuration Release `
+                          --output 'whole-closure.json' *> 'whole-closure-stdout.txt'
+          Write-Host "WHOLE_CLOSURE_EXIT=$LASTEXITCODE"
+          if (Test-Path 'whole-closure.json') {
+            $r = Get-Content 'whole-closure.json' -Raw | ConvertFrom-Json
+            Write-Host "WHOLE_CLOSURE_STATUS=$($r.Status)"
+            Write-Host "WHOLE_CLOSURE_FAILURES=$($r.FailureCount)"
+          }
+
+      - name: Report
+        shell: pwsh
+        run: |
+          if (Test-Path 'versioning-result.json') {
+            $r = Get-Content 'versioning-result.json' -Raw | ConvertFrom-Json
+            Write-Host "SUBJECT_STATUS=$($r.Status)"
+            Write-Host "SUBJECT_FAILURES=$($r.FailureCount)"
+            Write-Host "COVERAGE_LOADED=$($r.Coverage.LoadedAssemblies)"
+            Write-Host "COVERAGE_SUBJECTTYPES=$($r.Coverage.SubjectTypes)"
+            Write-Host "COVERAGE_SUBJECTASM=$($r.Coverage.SubjectAssemblies)"
+          }
+          # Did resolve-dependencies rebuild or restore? Decides what this leg exercised.
+          Write-Host "NOTE: check the 'Restore assembly cache' step for cache-hit status."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            versioning-result.json
+            versioning-stdout.txt
+            whole-closure.json
+            whole-closure-stdout.txt
+            load-order.txt
+            load-order-filtered.txt
+            assembly-hashes.txt
