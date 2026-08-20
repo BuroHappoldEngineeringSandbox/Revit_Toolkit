@@ -1,0 +1,44 @@
+name: differential prototype
+
+# Throwaway. Runs ci-versioning unchanged and keeps its result. Two branches, one with a
+# method genuinely removed, are compared offline. The point is whether a base-versus-branch
+# diff isolates the author's change, which no run so far has tested: the determinism gate
+# compared two IDENTICAL source states and only showed the harness is not disqualified.
+
+on:
+  push:
+    branches: [probe/diff-base, probe/diff-branch]
+
+jobs:
+  leg:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Run ci-versioning
+        id: ver
+        continue-on-error: true
+        uses: BHoM/CI_Toolkit/.github/actions/ci-versioning@develop
+        with:
+          app_id: ${{ secrets.BHOM_APP_ID }}
+          private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
+          fallback_token: ${{ github.token }}
+
+      - name: Report
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path 'versioning-result.json') {
+            $r = Get-Content 'versioning-result.json' -Raw | ConvertFrom-Json
+            Write-Host "LEG=${{ github.ref_name }} STATUS=$($r.Status) FAILURES=$($r.FailureCount)"
+            foreach ($f in $r.Failures) { Write-Host "  FAILURE: $($f.Description)" }
+          } else { Write-Host "::warning::no versioning-result.json" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: diff-${{ github.ref_name }}
+          path: |
+            versioning-result.json
+            versioning-stdout.txt
