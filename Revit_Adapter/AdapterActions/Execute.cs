@@ -100,4 +100,4 @@ namespace BH.Adapter.Revit
 
 
 
-// differential prototype: base leg
+// differential prototype: branch leg, IsUsed.cs removed
