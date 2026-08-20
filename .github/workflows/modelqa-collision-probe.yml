@@ -30,7 +30,6 @@ jobs:
           app_id: ${{ secrets.BHOM_APP_ID }}
           private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
           fallback_token: ${{ github.token }}
-          additional_dataset_repos: BuroHappoldEngineering/Revit_ModelQA_Tool
 
       - name: Capture load order, closure and coverage
         shell: pwsh
