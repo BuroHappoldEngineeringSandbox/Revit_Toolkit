@@ -38,7 +38,7 @@ namespace BH.Revit.Engine.Core
         [Input("curve", "Curve to get the intersection for.")]
         [Input("solid", "Solid to get the intersection for.")]
         [Output("curves", "Segments of the input curve that are inside the input solid.")]
-        public static List<Curve> Intersections(this Curve curve, Solid solid)
+        public static List<Curve> IntersectionsRenamedByProbe(this Curve curve, Solid solid)
         {
             if (curve == null || solid == null)
             {
