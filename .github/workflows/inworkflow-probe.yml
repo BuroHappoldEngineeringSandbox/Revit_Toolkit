@@ -1,0 +1,144 @@
+name: differential in-workflow prototype
+
+# Throwaway. The two-run version already showed the diff isolates the author's change.
+# This is the part that was untested: doing the base leg inside ONE job, as
+# ci-serialisation does, which means wiping ProgramData and rebuilding the closure.
+
+on:
+  push:
+    branches: [probe/diff-inworkflow]
+
+env:
+  BASE_REF: probe/diff-base
+
+jobs:
+  differential:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      # ---- branch leg: the real check, unmodified ----
+      - name: Versioning on the branch
+        id: branch
+        continue-on-error: true
+        uses: BHoM/CI_Toolkit/.github/actions/ci-versioning@develop
+        with:
+          app_id: ${{ secrets.BHOM_APP_ID }}
+          private_key: ${{ secrets.BHOM_APP_PRIVATE_KEY }}
+          fallback_token: ${{ github.token }}
+
+      - name: Keep the branch result, and decide whether a baseline is even needed
+        id: gate
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'versioning-result.json')) {
+            Write-Host "::error::branch leg produced no result"; exit 1
+          }
+          Copy-Item 'versioning-result.json' 'branch-result.json' -Force
+          $r = Get-Content 'branch-result.json' -Raw | ConvertFrom-Json
+          Write-Host "BRANCH_STATUS=$($r.Status) BRANCH_FAILURES=$($r.FailureCount)"
+
+          # Same short-circuit as CompareCommand: Pass or Warning is always a success and
+          # the baseline is never built. This is what keeps the cost off the ~87% of runs
+          # that are green.
+          $needed = ($r.Status -eq 'Error')
+          "needed=$needed" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "BASELINE_NEEDED=$needed"
+
+          # The runner is reused for the base leg. It lives in the workspace and is
+          # untracked, so it survives the checkout of the base ref.
+          $exe = Get-ChildItem -Recurse -Filter 'VersioningRunner.exe' | Select-Object -First 1
+          "runner=$($exe.FullName)" | Out-File $env:GITHUB_OUTPUT -Append
+
+          # The Revit API mocks are provisioned by ci-versioning, not by
+          # resolve-dependencies, so a naive wipe would leave the base leg without them
+          # and the two legs would not be comparable. Preserve them across the wipe.
+          # ci-serialisation's template does not face this because it has no mocks.
+          New-Item -ItemType Directory -Force -Path 'D:\mockstash' | Out-Null
+          foreach ($m in 'RevitAPI.dll','RevitAPIUI.dll','AdWindows.dll','UIFramework.dll','UIFrameworkServices.dll') {
+            $p = "C:\ProgramData\BHoM\Assemblies\$m"
+            if (Test-Path $p) { Copy-Item $p 'D:\mockstash' -Force }
+          }
+          Write-Host "MOCKS_STASHED=$((Get-ChildItem 'D:\mockstash' -File).Count)"
+
+      - name: Check out the base ref and wipe the closure
+        if: steps.gate.outputs.needed == 'True'
+        shell: pwsh
+        run: |
+          git fetch origin $env:BASE_REF --depth=1
+          git checkout FETCH_HEAD -- .
+          git status --short | Select-Object -First 5
+          Remove-Item 'C:\ProgramData\BHoM\Assemblies\*' -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host "AFTER_WIPE=$(@(Get-ChildItem 'C:\ProgramData\BHoM\Assemblies' -File -ErrorAction SilentlyContinue).Count)"
+
+      - name: Resolve dependencies for the base
+        if: steps.gate.outputs.needed == 'True'
+        uses: BHoM/CI_Toolkit/.github/actions/resolve-dependencies@develop
+        with:
+          mode: caller
+          dotnet_version: "8.0"
+          configuration: Release
+          token: ${{ github.token }}
+          additional_seeds: |
+            BHoM/Test_Toolkit
+            BHoM/Versioning_Toolkit
+            BHoM/File_Toolkit
+
+      - name: Build the base, restore the mocks, run the runner
+        if: steps.gate.outputs.needed == 'True'
+        shell: pwsh
+        run: |
+          $sln = (Get-ChildItem -Filter *.sln | Select-Object -First 1).FullName
+          dotnet restore $sln
+          dotnet build $sln --no-restore -c Release --nologo -m -clp:ErrorsOnly
+
+          # Same alt-config build the branch leg got, or the two closures differ.
+          $alt = Join-Path (Get-Location) 'altConfigs.txt'
+          if (Test-Path $alt) {
+            foreach ($c in @('Release2022','Release2023','Release2024','Release2025','Release2026')) {
+              dotnet build $sln --no-restore -c $c --nologo -m -clp:ErrorsOnly
+            }
+          }
+
+          $vsln = 'C:\bhom-deps\Versioning_Toolkit\.ci\code\Verification.sln'
+          dotnet restore $vsln
+          dotnet build $vsln --no-restore -c Release --nologo -clp:ErrorsOnly
+
+          Copy-Item 'D:\mockstash\*.dll' 'C:\ProgramData\BHoM\Assemblies' -Force
+          Write-Host "BASE_CLOSURE=$(@(Get-ChildItem 'C:\ProgramData\BHoM\Assemblies' -File).Count)"
+
+          & "${{ steps.gate.outputs.runner }}" `
+              --assemblies 'C:\ProgramData\BHoM\Assemblies' `
+              --subject-assemblies (Join-Path (Get-Location) 'Build') `
+              --configuration Release `
+              --output 'base-result.json' *> 'base-stdout.txt'
+          $global:LASTEXITCODE = 0
+          $b = Get-Content 'base-result.json' -Raw | ConvertFrom-Json
+          Write-Host "BASE_STATUS=$($b.Status) BASE_FAILURES=$($b.FailureCount)"
+
+      - name: Compare
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'base-result.json')) {
+            Write-Host "VERDICT=no-baseline-needed"; exit 0
+          }
+          $branch = (Get-Content 'branch-result.json' -Raw | ConvertFrom-Json)
+          $base   = (Get-Content 'base-result.json'   -Raw | ConvertFrom-Json)
+          $baseDescs = @($base.Failures.Description)
+          $new = @($branch.Failures.Description | Where-Object { $baseDescs -notcontains $_ } | Sort-Object -Unique)
+          $cancelled = @($branch.Failures.Description | Where-Object { $baseDescs -contains $_ } | Sort-Object -Unique)
+          Write-Host "CANCELLED=$($cancelled -join '|')"
+          Write-Host "NEW=$($new -join '|')"
+          if ($new.Count -eq 0) { Write-Host "VERDICT=no-regression" }
+          else { Write-Host "VERDICT=regression NEW_COUNT=$($new.Count)" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inwf-differential
+          path: |
+            branch-result.json
+            base-result.json
+            base-stdout.txt
