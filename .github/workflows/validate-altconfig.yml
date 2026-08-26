@@ -1,0 +1,16 @@
+# Sandbox validation harness for the alt-config widening of the versioning subject set.
+# Other workflows are removed on this branch so only the check under test runs.
+name: Validate altConfig widening
+
+on:
+  pull_request:
+
+jobs:
+  ci-versioning:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Run versioning
+        uses: BuroHappoldEngineeringSandbox/CI_Toolkit/.github/actions/ci-versioning@validate/altconfig-widening
+        with:
+          fallback_token: ${{ github.token }}
