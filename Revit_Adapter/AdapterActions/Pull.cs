@@ -36,6 +36,7 @@ namespace BH.Adapter.Revit
 
         public override IEnumerable<object> Pull(IRequest request, PullType pullType = PullType.AdapterDefault, ActionConfig actionConfig = null)
         {
+            // sandbox CI test marker (2026-06-24): exercises CI_Toolkit develop after PRs #80-#85; close without merging.
             //Check if request is not null or empty
             if (request == null)
             {
